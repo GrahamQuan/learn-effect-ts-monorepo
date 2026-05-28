@@ -1,0 +1,14 @@
+{
+  "editor.defaultFormatter": "biomejs.biome",
+  "editor.codeActionsOnSave": {
+    "quickfix.biome": "explicit",
+    "source.organizeImports.biome": "explicit",
+     "source.fixAll.biome": "explicit"
+  },
+  "[javascript][typescript][javascriptreact][typescriptreact][vue][html][css][less][scss][json][jsonc]": {
+    "editor.defaultFormatter": "biomejs.biome",
+    "editor.formatOnSave": true
+  },
+  "typescript.tsdk": "node_modules/typescript/lib",
+  "typescript.enablePromptUseWorkspaceTsdk": true
+}

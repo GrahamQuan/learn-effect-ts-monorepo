@@ -1,0 +1,32 @@
+{
+  "name": "learn-effect-ts-monorepo",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": "24.15.0",
+    "pnpm": "10.33.0"
+  },
+  "scripts": {
+    "build": "turbo build",
+    "check": "pnpm lint && turbo typecheck test",
+    "dev": "turbo dev",
+    "format": "biome format --write .",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "new:template": "tsx scripts/create-template-app.ts",
+    "test": "turbo test",
+    "test:e2e": "playwright test",
+    "typecheck": "turbo typecheck"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.14",
+    "@playwright/test": "^1.59.1",
+    "@types/node": "24",
+    "tsx": "^4.21.0",
+    "turbo": "^2.9.8",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.5"
+  }
+}
