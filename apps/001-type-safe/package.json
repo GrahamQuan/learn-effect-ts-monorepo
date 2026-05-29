@@ -1,0 +1,22 @@
+{
+  "name": "001-type-safe",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "build": "echo 'Add build script here'",
+    "test": "echo 'Add test script here'",
+    "lint": "echo 'Add lint script here'",
+    "run:01": "tsx src/01-flatMap.ts",
+    "run:02": "tsx src/02-tryPromise.ts",
+    "run:03": "tsx src/03-pipe.ts",
+    "run:04": "tsx src/04-catchTag.ts",
+    "run:05": "tsx src/05-custom-error.ts",
+    "run:06": "tsx src/06-catchTags.ts",
+    "run:07": "tsx src/07-filterOrFail.ts",
+    "run:08": "tsx src/08-TaggedError.ts"
+  },
+  "dependencies": {
+    "effect": "^3.21.2"
+  }
+}
