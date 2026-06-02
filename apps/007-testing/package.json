@@ -1,0 +1,13 @@
+{
+  "name": "007-effect-demo",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "test": "vitest",
+    "run:00": "BASE_URL=https://pokeapi.co tsx src/00-testing/index.ts"
+  },
+  "dependencies": {
+    "effect": "^3.21.2"
+  }
+}
