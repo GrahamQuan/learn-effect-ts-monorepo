@@ -331,6 +331,12 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
 
+  apps/007-testing:
+    dependencies:
+      effect:
+        specifier: ^3.21.2
+        version: 3.21.2
+
   apps/007-text-splitter:
     dependencies:
       '@hono/node-server':
@@ -396,6 +402,21 @@ importers:
       server-only:
         specifier: ^0.0.1
         version: 0.0.1
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+
+  apps/008-runtime:
+    dependencies:
+      effect:
+        specifier: ^3.21.2
+        version: 3.21.2
+
+  apps/009-effect-in-production:
+    dependencies:
+      effect:
+        specifier: ^3.21.2
+        version: 3.21.2
       zod:
         specifier: ^4.4.3
         version: 4.4.3
