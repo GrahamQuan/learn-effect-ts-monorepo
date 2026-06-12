@@ -81,15 +81,7 @@ todoRoute.get('/', (c) =>
   }),
 );
 
-todoRoute.get('/health', (c) =>
-  runTodoRoute(
-    c,
-    Effect.succeed({
-      status: 'ok',
-      service: 'todo-api',
-    }),
-  ),
-);
+todoRoute.get('/health', (c) => runTodoRoute(c, Effect.succeed('ok')));
 
 todoRoute.get('/learning/effect-map', (c) =>
   runTodoRoute(

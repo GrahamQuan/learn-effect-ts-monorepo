@@ -1,11 +1,11 @@
 meta {
   name: 04 Update Todo
   type: http
-  seq: 4
+  seq: 5
 }
 
 patch {
-  url: {{baseUrl}}/api/todos/{{todoId}}
+  url: http://localhost:4000/api/todos/missing-todo-id
   body: json
   auth: none
 }
@@ -16,8 +16,16 @@ headers {
 
 body:json {
   {
-    "title": "{{todoUpdatedTitle}}",
+    "title": "Learn Effect with Bruno - updated",
     "completed": true
+  }
+}
+
+script:pre-request {
+  const todoId = bru.getVar("todoId");
+
+  if (todoId) {
+    req.setUrl(`http://localhost:4000/api/todos/${encodeURIComponent(todoId)}`);
   }
 }
 
@@ -29,6 +37,6 @@ tests {
   test("updates todo", function() {
     const body = res.getBody();
     expect(body.completed).to.equal(true);
-    expect(body.title).to.equal(bru.getEnvVar("todoUpdatedTitle"));
+    expect(body.title).to.equal("Learn Effect with Bruno - updated");
   });
 }
