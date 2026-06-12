@@ -1,36 +1,30 @@
-import { config } from 'dotenv'; // if we use node
-import { expand } from 'dotenv-expand'; // if we use node
-
-import { ZodError, z } from 'zod';
+import { config } from 'dotenv';
+import { expand } from 'dotenv-expand';
+import { Config, Context, Effect, Layer } from 'effect';
 
 expand(config());
 
-const EnvSchema = z.object({
-  NODE_ENV: z.string().default('development'),
-  PORT: z.coerce.number().default(4000),
-  DATABASE_URL: z.string(),
-  CACHE_URL: z.string(),
-});
-
-export type EnvSchema = z.infer<typeof EnvSchema>;
-
-try {
-  EnvSchema.parse(process.env);
-} catch (error) {
-  if (error instanceof ZodError) {
-    let message = 'Missing required values in .env:\n';
-    error.issues.forEach((issue) => {
-      message = `${String(issue.path[0])}: ${issue.message}\n`;
-    });
-    const e = new Error(message);
-    e.stack = '';
-    throw e;
-  } else {
-    console.error(error);
-  }
+export interface AppConfig {
+  readonly nodeEnv: string;
+  readonly port: number;
+  readonly databaseUrl: string;
+  readonly cacheUrl: string;
 }
 
-export type ENV = z.infer<typeof EnvSchema>;
-const env = EnvSchema.parse(process.env);
+export const AppConfig = Context.GenericTag<AppConfig>('010-effect-hono-demo/AppConfig');
 
-export { env };
+export const loadEnv = Effect.gen(function* () {
+  const nodeEnv = yield* Config.string('NODE_ENV').pipe(Config.withDefault('development'));
+  const port = yield* Config.number('PORT').pipe(Config.withDefault(4000));
+  const databaseUrl = yield* Config.string('DATABASE_URL');
+  const cacheUrl = yield* Config.string('CACHE_URL');
+
+  return {
+    nodeEnv,
+    port,
+    databaseUrl,
+    cacheUrl,
+  };
+});
+
+export const AppConfigLive = Layer.effect(AppConfig, loadEnv);

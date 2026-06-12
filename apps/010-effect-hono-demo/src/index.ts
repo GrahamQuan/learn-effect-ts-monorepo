@@ -1,10 +1,31 @@
 import { serve } from '@hono/node-server';
+import { Effect } from 'effect';
 
-import { app } from './app';
-import { env } from './lib/env';
+import { createApp } from '@/app';
+import { loadEnv } from '@/lib/env';
+import { prepareRoutes } from '@/routes';
 
-const port = env.PORT;
+const app = createApp();
 
-serve({ fetch: app.fetch, port }, (info) => {
-  console.log({ url: `http://localhost:${info.port}` });
+const main = Effect.gen(function* () {
+  const env = yield* loadEnv;
+
+  yield* prepareRoutes;
+
+  return yield* Effect.sync(() =>
+    serve({ fetch: app.fetch, port: env.port }, (info) => {
+      console.log('Server is running on port:', info.port);
+    }),
+  );
 });
+
+void Effect.runPromise(
+  main.pipe(
+    Effect.catchAll((error) =>
+      Effect.sync(() => {
+        console.error(error);
+        process.exitCode = 1;
+      }),
+    ),
+  ),
+);

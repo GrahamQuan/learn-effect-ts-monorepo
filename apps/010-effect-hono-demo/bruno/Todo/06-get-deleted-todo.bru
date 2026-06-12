@@ -1,0 +1,17 @@
+meta {
+  name: 06 Get Deleted Todo
+  type: http
+  seq: 6
+}
+
+get {
+  url: {{baseUrl}}/api/todos/{{todoId}}
+  body: none
+  auth: none
+}
+
+tests {
+  test("returns 404", function() {
+    expect(res.getStatus()).to.equal(404);
+  });
+}

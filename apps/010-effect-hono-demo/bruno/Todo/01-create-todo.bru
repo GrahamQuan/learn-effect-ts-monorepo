@@ -1,0 +1,41 @@
+meta {
+  name: 01 Create Todo
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/api/todos
+  body: json
+  auth: none
+}
+
+headers {
+  content-type: application/json
+}
+
+body:json {
+  {
+    "title": "{{todoTitle}}",
+    "description": "Created from Bruno to test the Effect + Hono TODO API"
+  }
+}
+
+script:post-response {
+  const body = res.getBody();
+
+  if (body?.id) {
+    bru.setEnvVar("todoId", body.id);
+  }
+}
+
+tests {
+  test("returns 201", function() {
+    expect(res.getStatus()).to.equal(201);
+  });
+
+  test("stores todo id for later requests", function() {
+    const body = res.getBody();
+    expect(body.id).to.be.a("string");
+  });
+}

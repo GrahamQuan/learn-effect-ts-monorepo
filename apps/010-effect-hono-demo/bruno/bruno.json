@@ -1,0 +1,6 @@
+{
+  "version": "1",
+  "name": "010-effect-hono-demo",
+  "type": "collection",
+  "ignore": ["node_modules", ".git"]
+}

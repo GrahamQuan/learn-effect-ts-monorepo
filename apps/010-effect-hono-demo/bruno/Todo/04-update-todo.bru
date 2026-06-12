@@ -1,0 +1,34 @@
+meta {
+  name: 04 Update Todo
+  type: http
+  seq: 4
+}
+
+patch {
+  url: {{baseUrl}}/api/todos/{{todoId}}
+  body: json
+  auth: none
+}
+
+headers {
+  content-type: application/json
+}
+
+body:json {
+  {
+    "title": "{{todoUpdatedTitle}}",
+    "completed": true
+  }
+}
+
+tests {
+  test("returns 200", function() {
+    expect(res.getStatus()).to.equal(200);
+  });
+
+  test("updates todo", function() {
+    const body = res.getBody();
+    expect(body.completed).to.equal(true);
+    expect(body.title).to.equal(bru.getEnvVar("todoUpdatedTitle"));
+  });
+}
