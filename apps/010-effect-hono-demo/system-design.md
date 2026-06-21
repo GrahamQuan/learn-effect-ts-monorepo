@@ -11,6 +11,8 @@ The app is designed to show how a real Hono API can be built around Effect conce
 - request validation with `Schema`
 - dependency injection with `Context`
 - implementation wiring with `Layer`
+- resource safety with `Layer.scoped`, `Scope`, and `Effect.acquireRelease`
+- app-owned execution with `ManagedRuntime`
 - boundary execution with `Effect.runPromise`
 
 The main learning goal is not only "make CRUD work". The goal is to make every
@@ -31,16 +33,20 @@ Infrastructure boundary
 
 Runtime boundary
   Effect value -> Promise used by Hono / Node
+
+Lifetime boundary
+  app startup -> scoped infra acquisition -> app shutdown cleanup
 ```
 
 ## High Level Design
 
 ```txt
-The app is split into three levels:
+The app is split into four levels:
 
 1. App shell
    src/app.ts
    src/index.ts
+   src/runtime.ts
 
 2. Shared infrastructure
    src/infra/database.ts
@@ -71,14 +77,20 @@ App shell:
 
 Node entrypoint:
   src/index.ts is Node.js for now
-  it loads config, prepares routes, and starts @hono/node-server
+  it loads config, prepares routes through AppRuntime, and starts @hono/node-server
+  it disposes AppRuntime on shutdown
+
+App runtime:
+  src/runtime.ts owns the app-level ManagedRuntime
+  composes shared infra layers with feature layers
+  gives scoped resources app lifetime instead of request lifetime
 
 Future runtime adapters:
   can reuse createApp() from src/app.ts
   should not need to change route modules
 
 Infra:
-  knows how to create database, Redis, and queue clients
+  knows how to create and release database, Redis, and queue resources
   does not know todo business rules
 
 DB schema:
@@ -88,6 +100,7 @@ DB schema:
 Todo feature:
   knows todo routes, validation, and workflows
   asks for infra through Context tags
+  contributes TodoLayer to the app runtime
 ```
 
 ## Request Workflow
@@ -106,7 +119,7 @@ Todo route module
         | 1. Read params / JSON body
         | 2. Decode input with Schema
         | 3. Ask Context for TodoService
-        | 4. Run workflow through TodoRuntime
+        | 4. Run workflow through AppRuntime
         v
 Effect workflow
   Effect.gen(...)
@@ -122,7 +135,7 @@ TodoRepository          TodoCache
   Postgres              Redis
         |
         v
-Drizzle + Neon
+Drizzle + Neon Pool
 
 Mutation side effect:
 
@@ -151,8 +164,9 @@ src/index.ts
 
   does:
     loadEnv
-    prepareRoutes
+    AppRuntime.runPromise(prepareRoutes)
     serve({ fetch: app.fetch, port })
+    register SIGINT / SIGTERM shutdown
 
   useful for:
     local dev
@@ -169,7 +183,20 @@ loadEnv
   Config reads:
     PORT
     DATABASE_URL
+    DATABASE_POOL_MAX
+    DATABASE_POOL_IDLE_TIMEOUT_MS
+    DATABASE_POOL_MAX_LIFETIME_SECONDS
     CACHE_URL
+        |
+        v
+AppRuntime.runPromise(prepareRoutes)
+  src/runtime.ts
+        |
+        v
+AppLayer acquisition
+  acquire DB pool
+  acquire Redis client
+  acquire BullMQ queue
         |
         v
 prepareRoutes
@@ -180,7 +207,7 @@ route module prepare effects
         |
         v
 prepareTodoRoute
-  prepareStorage.pipe(Effect.provide(TodoStorageLayer))
+  asks for TodoService from AppRuntime
         |
         v
 TodoRepository.ensureSchema
@@ -192,12 +219,100 @@ create table if not exists todos (...)
 serve Hono app on PORT
 ```
 
+## App Runtime And Resource Lifetime
+
+The app uses one shared `ManagedRuntime`:
+
+```txt
+src/runtime.ts
+
+InfraLive
+  AppConfigLive
+    -> DatabaseLive
+    -> RedisLive
+    -> QueueLive
+
+FeatureLive
+  TodoLayer
+
+AppLayer
+  FeatureLive provided by InfraLive
+
+AppRuntime
+  ManagedRuntime.make(AppLayer)
+```
+
+This is the production-like lifetime model:
+
+```txt
+Node process starts
+        |
+        v
+AppRuntime is created
+        |
+        v
+First AppRuntime.runPromise(...)
+        |
+        v
+Scoped layers acquire resources
+  DB pool
+  Redis client
+  BullMQ queue
+        |
+        v
+Many HTTP requests run small Effects
+        |
+        v
+SIGINT / SIGTERM / startup failure
+        |
+        v
+AppRuntime.disposeEffect
+        |
+        v
+Scoped finalizers run
+  pool.end()
+  redis.quit()
+  queue.close()
+```
+
+Important idea:
+
+```txt
+Request Effects are short-lived.
+AppRuntime is long-lived.
+Scoped infra resources live with AppRuntime, not with one request.
+```
+
+Scoped resource summary:
+
+```txt
+DatabaseLive
+  acquire: new Pool(...)
+  release: pool.end()
+  lifetime: AppRuntime
+
+RedisLive
+  acquire: new Redis(...)
+  release: redis.quit()
+  lifetime: AppRuntime
+
+TodoEventQueueLive
+  acquire: QueueFactory.makeQueue("todo-events")
+  release: queue.close()
+  lifetime: AppRuntime
+
+QueueLive
+  acquire: parse CACHE_URL into connection options
+  release: none
+  lifetime: ordinary Layer value
+```
+
 ## Future Runtime Adapter Shape
 
 ```txt
 src/runtimes/serverless.ts
   import { createApp } from '@/app'
-  import { prepareRoutes } from '@/routes'
+  import { AppRuntime } from '@/runtime'
 
   create an app with lazy preparation
   export app.fetch
@@ -221,7 +336,7 @@ build an Effect
   Effect.gen(...)
         |
         v
-TodoRuntime.runPromise(
+AppRuntime.runPromise(
   effect.pipe(
     Effect.match({
       onFailure: appErrorToHttp,
@@ -503,12 +618,15 @@ Unexpected defects:
 Shared infrastructure layers
   src/infra/database.ts
     provides Database
+    scoped resource: Neon Pool
 
   src/infra/redis.ts
     provides RedisClient
+    scoped resource: ioredis client
 
   src/infra/mq.ts
     provides QueueFactory
+    pure factory from CACHE_URL connection options
 
 Feature layers
   routes/todo/todo.repository.ts
@@ -522,6 +640,7 @@ Feature layers
   routes/todo/todo.queue.ts
     needs QueueFactory
     provides TodoEventQueue
+    scoped resource: BullMQ Queue
 
   routes/todo/todo.service.ts
     needs TodoRepository + TodoCache + TodoEventQueue
@@ -545,38 +664,47 @@ TodoRepository says:
   I need Database
 
 DatabaseLive says:
-  I can create Database from AppConfig
+  I can acquire a Neon Pool from AppConfig
+  I can create a Drizzle Database from that Pool
+  I know how to release the Pool
 
-TodoRuntime says:
-  I will connect those pieces before the route runs
+AppRuntime says:
+  I will connect app infra and feature layers once
+  I will keep scoped resources alive while the app is alive
+  I will release scoped resources when the app shuts down
 ```
 
 ## Runtime Wiring
 
 ```txt
-AppConfigLive
-  |
-  +--> DatabaseLive --> TodoRepositoryLive
-  |
-  +--> RedisLive ----> TodoCacheLive
-  |
-  +--> QueueLive ----> TodoEventQueueLive
+src/runtime.ts
 
-TodoRepositoryLive
-TodoCacheLive
-TodoEventQueueLive
+AppConfigLive
         |
         v
-TodoServiceLive
-        |
-        v
+InfraLive
+  +--> DatabaseLive
+  |      acquire Neon Pool
+  |
+  +--> RedisLive
+  |      acquire Redis client
+  |
+  +--> QueueLive
+         build QueueFactory
+
 TodoLayer
-        |
-        v
-TodoRuntime
-        |
-        v
-Hono route handlers call TodoRuntime.runPromise(...)
+  TodoRepositoryLive needs Database
+  TodoCacheLive needs RedisClient
+  TodoEventQueueLive needs QueueFactory
+  TodoServiceLive needs repository/cache/queue
+
+AppLayer
+  TodoLayer provided by InfraLive
+
+AppRuntime
+  ManagedRuntime.make(AppLayer)
+
+Hono route handlers call AppRuntime.runPromise(...)
 ```
 
 ## Context Dependency Graph
@@ -709,6 +837,25 @@ routes/index.ts handles:
 src/index.ts does not change
 ```
 
+Then add the user feature layer to `src/runtime.ts`:
+
+```txt
+FeatureLive = Layer.mergeAll(
+  TodoLayer,
+  UserLayer
+)
+```
+
+This keeps ownership clear:
+
+```txt
+routes/index.ts:
+  HTTP route mounting and prepare registry
+
+runtime.ts:
+  app-level Layer composition and ManagedRuntime ownership
+```
+
 The user feature should reuse shared infra:
 
 ```txt
@@ -746,7 +893,7 @@ user.queue.ts
 
 ## Drizzle Database Style
 
-This demo uses Drizzle ORM with the Neon HTTP driver.
+This demo uses Drizzle ORM with the Neon serverless Pool driver.
 
 ```txt
 Connection style:
@@ -754,13 +901,33 @@ Connection style:
 DATABASE_URL
     |
     v
-neon(DATABASE_URL)
+new Pool({
+  connectionString: DATABASE_URL,
+  max: DATABASE_POOL_MAX,
+  idleTimeoutMillis: DATABASE_POOL_IDLE_TIMEOUT_MS,
+  maxLifetimeSeconds: DATABASE_POOL_MAX_LIFETIME_SECONDS
+})
     |
     v
-drizzle(sql)
+drizzle(pool)
     |
     v
 DatabaseLive provides Database
+  db: Drizzle client
+  pool: Neon Pool
+```
+
+The pool is an app-scoped resource:
+
+```txt
+Acquire:
+  new Pool(...)
+
+Use:
+  many requests share the Drizzle client backed by the pool
+
+Release:
+  pool.end()
 ```
 
 SQL table definitions live in one folder:
@@ -862,6 +1029,9 @@ Effect.gen
 Effect.all
   runs independent mutation side effects together
 
+Effect.acquireRelease
+  describes how to acquire a resource and how to release it
+
 Effect.catchTag
   handles one known tagged error, such as CacheMiss
 
@@ -873,6 +1043,12 @@ Effect.match
 
 Effect.runPromise
   runs the Effect at the Hono boundary
+
+Layer.scoped
+  builds services that need app-lifetime cleanup
+
+ManagedRuntime
+  owns the app Scope and runs request Effects with app services
 ```
 
 ## Source Of Truth
@@ -897,16 +1073,29 @@ BullMQ queue:
 
 ```txt
 Current demo choice:
-  one TodoRuntime in the todo feature
+  one AppRuntime in src/runtime.ts
 
-Why it is okay here:
-  this app has one feature route
-  it keeps learning files close together
+Why it is production-like:
+  all route Effects run through one app-owned runtime
+  shared infra layers are acquired once
+  scoped finalizers run when the runtime is disposed
 
-Future production direction:
-  one app-level runtime
-  all route layers composed into one AppLayer
-  shared infra layers created once
+Tradeoff:
+  route modules now import AppRuntime at the HTTP adapter boundary
+  feature services still depend on Context tags, not direct infra constructors
+```
+
+```txt
+Current demo choice:
+  DB pool, Redis client, and BullMQ Queue are scoped resources
+
+Why it is production-like:
+  long-lived resources are not created per request
+  cleanup is explicit and tied to AppRuntime.disposeEffect
+
+Tradeoff:
+  startup wiring is a little more complex than plain constructors
+  the lifetime model is much clearer for learning real services
 ```
 
 ```txt
@@ -954,6 +1143,7 @@ apps/010-effect-hono-demo
   src
     app.ts
     index.ts
+    runtime.ts
 
     lib
       env.ts

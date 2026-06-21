@@ -11,11 +11,14 @@ export interface TodoEventQueue {
 
 export const TodoEventQueue = Context.GenericTag<TodoEventQueue>('010-effect-hono-demo/todo/TodoEventQueue');
 
-export const TodoEventQueueLive = Layer.effect(
+export const TodoEventQueueLive = Layer.scoped(
   TodoEventQueue,
   Effect.gen(function* () {
     const queueFactory = yield* QueueFactory;
-    const queue = queueFactory.makeQueue<TodoEvent, void, TodoEvent['type']>('todo-events');
+    const queue = yield* Effect.acquireRelease(
+      Effect.sync(() => queueFactory.makeQueue<TodoEvent, void, TodoEvent['type']>('todo-events')),
+      (queue) => Effect.tryPromise(() => queue.close()).pipe(Effect.ignoreLogged),
+    );
 
     return {
       publish: (event) =>

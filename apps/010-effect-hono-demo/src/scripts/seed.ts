@@ -15,6 +15,9 @@ const SeedConfigLive = Layer.effect(
       nodeEnv,
       port: 0,
       databaseUrl,
+      databasePoolMax: 2,
+      databasePoolIdleTimeoutMs: 5_000,
+      databasePoolMaxLifetimeSeconds: 60,
       cacheUrl: 'redis://unused-by-seed',
     };
   }),

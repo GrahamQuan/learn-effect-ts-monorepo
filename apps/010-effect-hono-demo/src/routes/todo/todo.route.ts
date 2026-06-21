@@ -1,17 +1,14 @@
 import { Effect } from 'effect';
-import type { ConfigError } from 'effect/ConfigError';
 import type { Context as HonoContext } from 'hono';
 import { Hono } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
-
 import type { AppError } from '@/routes/todo/todo.errors';
-import { DatabaseError, ValidationError } from '@/routes/todo/todo.errors';
-import { TodoRepository } from '@/routes/todo/todo.repository';
-import { TodoRuntime, TodoStorageLayer } from '@/routes/todo/todo.runtime';
+import { ValidationError } from '@/routes/todo/todo.errors';
 import { decodeCreateTodoInput, decodeTodoId, decodeUpdateTodoInput } from '@/routes/todo/todo.schema';
 import { TodoService } from '@/routes/todo/todo.service';
+import { AppRuntime } from '@/runtime';
 
-export type TodoRoutePrepareError = DatabaseError | ConfigError;
+export type TodoRoutePrepareError = AppError;
 
 type HttpResult = Readonly<{
   status: ContentfulStatusCode;
@@ -48,7 +45,7 @@ const runTodoRoute = async <A>(
   onSuccess: (value: A) => HttpResult = ok,
 ) => {
   try {
-    const result = await TodoRuntime.runPromise(
+    const result = await AppRuntime.runPromise(
       program.pipe(
         Effect.match({
           onFailure: appErrorToHttp,
@@ -64,13 +61,11 @@ const runTodoRoute = async <A>(
 };
 
 const prepareStorage = Effect.gen(function* () {
-  const repository = yield* TodoRepository;
-  yield* repository.ensureSchema;
+  const todos = yield* TodoService;
+  yield* todos.ensureStorage;
 });
 
-export const prepareTodoRoute: Effect.Effect<void, TodoRoutePrepareError, never> = prepareStorage.pipe(
-  Effect.provide(TodoStorageLayer),
-);
+export const prepareTodoRoute: Effect.Effect<void, TodoRoutePrepareError, TodoService> = prepareStorage;
 
 export const todoRoute = new Hono();
 
@@ -100,7 +95,9 @@ todoRoute.get('/learning/effect-map', (c) =>
       { concept: 'Data.TaggedError', where: 'Typed application errors in routes/todo/todo.errors.ts.' },
       { concept: 'Schema', where: 'Request and response validation in routes/todo/todo.schema.ts.' },
       { concept: 'Context', where: 'Services are requested by tag, not imported directly.' },
-      { concept: 'Layer', where: 'routes/todo/todo.runtime.ts wires db, cache, queue, repository, and service.' },
+      { concept: 'Layer', where: 'runtime.ts wires app infra; routes/todo/todo.runtime.ts wires the todo feature.' },
+      { concept: 'Scope', where: 'DB pool, Redis, and BullMQ Queue are acquired once and released on shutdown.' },
+      { concept: 'ManagedRuntime', where: 'AppRuntime is shared by all routes and owns scoped resources.' },
       { concept: 'Config', where: 'lib/env.ts reads PORT, DATABASE_URL, and CACHE_URL.' },
     ]),
   ),
