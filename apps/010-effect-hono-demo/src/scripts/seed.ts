@@ -48,8 +48,6 @@ interface SeedResult {
 const seedProgram: Effect.Effect<SeedResult, unknown, TodoRepository> = Effect.gen(function* () {
   const repository = yield* TodoRepository;
 
-  yield* repository.ensureSchema;
-
   const existingTodos = yield* repository.list;
   const existingTitles = new Set(existingTodos.map((todo) => todo.title));
   const missingTodos = seedTodos.filter((todo) => !existingTitles.has(todo.title));

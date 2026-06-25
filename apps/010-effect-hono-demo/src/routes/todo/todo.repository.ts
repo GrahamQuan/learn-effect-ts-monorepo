@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { desc, eq, sql } from 'drizzle-orm';
+import { desc, eq } from 'drizzle-orm';
 import { Context, Effect, Layer } from 'effect';
 
 import { todos } from '@/db/schema';
@@ -11,7 +11,6 @@ import { CreateTodoInput, Todo, UpdateTodoInput } from '@/routes/todo/todo.schem
 type TodoRow = typeof todos.$inferSelect;
 
 export interface TodoRepository {
-  readonly ensureSchema: Effect.Effect<void, DatabaseError>;
   readonly list: Effect.Effect<readonly Todo[], DatabaseError>;
   readonly findById: (id: string) => Effect.Effect<Todo, DatabaseError | NotFoundError>;
   readonly create: (input: CreateTodoInput) => Effect.Effect<Todo, DatabaseError>;
@@ -83,25 +82,6 @@ export const TodoRepositoryLive = Layer.effect(
     const { db } = yield* Database;
 
     return {
-      ensureSchema: Effect.tryPromise({
-        try: async () => {
-          await db.execute(sql`
-            create table if not exists todos (
-              id uuid primary key,
-              title text not null,
-              description text,
-              completed boolean not null default false,
-              created_at timestamptz not null default now(),
-              updated_at timestamptz not null default now()
-            )
-          `);
-        },
-        catch: (cause) =>
-          new DatabaseError({
-            operation: 'ensure todos table',
-            cause,
-          }),
-      }),
       list: Effect.tryPromise({
         try: () => selectTodosSql(db),
         catch: (cause) =>

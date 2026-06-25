@@ -5,6 +5,7 @@ import { AppConfig } from '@/lib/env';
 
 export interface QueueFactory {
   readonly makeQueue: <Data, Result = void, Name extends string = string>(name: string) => Queue<Data, Result, Name>;
+  readonly check: Effect.Effect<void, unknown>;
 }
 
 export const QueueFactory = Context.GenericTag<QueueFactory>('010-effect-hono-demo/infra/QueueFactory');
@@ -31,6 +32,18 @@ export const QueueLive = Layer.effect(
 
     return {
       makeQueue: (name) => new Queue(name, { connection }),
+      check: Effect.tryPromise({
+        try: async () => {
+          const queue = new Queue('__readiness__', { connection });
+
+          try {
+            await queue.waitUntilReady();
+          } finally {
+            await queue.close();
+          }
+        },
+        catch: (cause) => cause,
+      }),
     };
   }),
 );

@@ -8,8 +8,6 @@ import { decodeCreateTodoInput, decodeTodoId, decodeUpdateTodoInput } from '@/ro
 import { TodoService } from '@/routes/todo/todo.service';
 import { AppRuntime } from '@/runtime';
 
-export type TodoRoutePrepareError = AppError;
-
 type HttpResult = Readonly<{
   status: ContentfulStatusCode;
   body: unknown;
@@ -60,23 +58,14 @@ const runTodoRoute = async <A>(
   }
 };
 
-const prepareStorage = Effect.gen(function* () {
-  const todos = yield* TodoService;
-  yield* todos.ensureStorage;
-});
-
-export const prepareTodoRoute: Effect.Effect<void, TodoRoutePrepareError, TodoService> = prepareStorage;
-
 export const todoRoute = new Hono();
 
 todoRoute.get('/', (c) =>
   c.json({
     name: '010-effect-hono-demo',
-    routes: ['GET /api/health', 'GET /api/learning/effect-map', 'GET /api/todos', 'POST /api/todos'],
+    routes: ['GET /api/livez', 'GET /api/readyz', 'GET /api/learning/effect-map', 'GET /api/todos', 'POST /api/todos'],
   }),
 );
-
-todoRoute.get('/health', (c) => runTodoRoute(c, Effect.succeed('ok')));
 
 todoRoute.get('/learning/effect-map', (c) =>
   runTodoRoute(

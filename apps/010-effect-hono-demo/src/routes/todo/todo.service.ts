@@ -7,7 +7,6 @@ import { TodoRepository } from '@/routes/todo/todo.repository';
 import type { CreateTodoInput, Todo, TodoEvent, UpdateTodoInput } from '@/routes/todo/todo.schema';
 
 export interface TodoService {
-  readonly ensureStorage: Effect.Effect<void, AppError>;
   readonly list: Effect.Effect<readonly Todo[], AppError>;
   readonly getById: (id: string) => Effect.Effect<Todo, AppError>;
   readonly create: (input: CreateTodoInput) => Effect.Effect<Todo, AppError>;
@@ -45,7 +44,6 @@ export const TodoServiceLive = Layer.effect(
       );
 
     return {
-      ensureStorage: repository.ensureSchema,
       list: cache.getAll.pipe(
         Effect.catchTag('CacheMiss', () => loadListFromDatabase),
         Effect.catchTag('CacheError', () => loadListFromDatabase),

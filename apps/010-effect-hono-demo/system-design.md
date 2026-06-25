@@ -59,6 +59,9 @@ The app is split into four levels:
 
 4. Feature route
    src/routes/index.ts
+   src/routes/health/health.route.ts
+   src/routes/health/health.service.ts
+   src/routes/health/health.runtime.ts
    src/routes/todo/todo.route.ts
    src/routes/todo/todo.service.ts
    src/routes/todo/todo.repository.ts
@@ -77,7 +80,7 @@ App shell:
 
 Node entrypoint:
   src/index.ts is Node.js for now
-  it loads config, prepares routes through AppRuntime, and starts @hono/node-server
+  it loads config and starts @hono/node-server
   it disposes AppRuntime on shutdown
 
 App runtime:
@@ -95,7 +98,11 @@ Infra:
 
 DB schema:
   knows SQL table shape
-  can be reused by repositories and future migrations
+  is used by Drizzle migrations
+
+Health feature:
+  owns liveness and readiness endpoints
+  checks database, Redis, and queue readiness through Context tags
 
 Todo feature:
   knows todo routes, validation, and workflows
@@ -164,7 +171,6 @@ src/index.ts
 
   does:
     loadEnv
-    AppRuntime.runPromise(prepareRoutes)
     serve({ fetch: app.fetch, port })
     register SIGINT / SIGTERM shutdown
 
@@ -189,35 +195,20 @@ loadEnv
     CACHE_URL
         |
         v
-AppRuntime.runPromise(prepareRoutes)
-  src/runtime.ts
-        |
-        v
-AppLayer acquisition
-  acquire DB pool
-  acquire Redis client
-  acquire BullMQ queue
-        |
-        v
-prepareRoutes
-  src/routes/index.ts
-        |
-        v
-route module prepare effects
-        |
-        v
-prepareTodoRoute
-  asks for TodoService from AppRuntime
-        |
-        v
-TodoRepository.ensureSchema
-        |
-        v
-create table if not exists todos (...)
-        |
-        v
 serve Hono app on PORT
 ```
+
+Schema creation is not part of app startup:
+
+```txt
+Before starting the app:
+  pnpm --filter 010-effect-hono-demo db:migrate
+
+Then start the app:
+  pnpm --filter 010-effect-hono-demo dev
+```
+
+This keeps the app runtime separate from operational migration jobs.
 
 ## App Runtime And Resource Lifetime
 
@@ -233,6 +224,7 @@ InfraLive
     -> QueueLive
 
 FeatureLive
+  HealthLayer
   TodoLayer
 
 AppLayer
@@ -307,6 +299,32 @@ QueueLive
   lifetime: ordinary Layer value
 ```
 
+## Health And Readiness
+
+The demo exposes two production-style operational endpoints:
+
+```txt
+GET /api/livez
+  asks: is this Node process alive enough to answer HTTP?
+  checks: HealthService.live
+  expected use: container liveness probe
+
+GET /api/readyz
+  asks: can this process serve real traffic right now?
+  checks: HealthService.ready
+    - Postgres: select 1
+    - Redis: ping
+    - QueueFactory: BullMQ readiness check
+  expected use: load balancer or container readiness probe
+```
+
+Important difference:
+
+```txt
+Liveness should be cheap and forgiving.
+Readiness should verify external dependencies.
+```
+
 ## Future Runtime Adapter Shape
 
 ```txt
@@ -314,7 +332,7 @@ src/runtimes/serverless.ts
   import { createApp } from '@/app'
   import { AppRuntime } from '@/runtime'
 
-  create an app with lazy preparation
+  create an app using the same route modules
   export app.fetch
 
 Important:
@@ -528,7 +546,8 @@ So a cache miss or cache failure should not break reads if the database works.
 
 ## Write Path Details
 
-Writes go to Postgres first, then the app performs secondary effects.
+Writes go to Postgres first. After the source-of-truth change succeeds, the app
+performs secondary effects.
 
 ```txt
 create / update / delete
@@ -565,6 +584,14 @@ If queue publish fails:
 ```
 
 This is why `todo.service.ts` uses `Effect.catchAll` in `bestEffort`.
+
+The important production idea for this version:
+
+```txt
+Postgres is the source of truth.
+Redis and BullMQ are useful side effects.
+The client response should not depend on non-critical side effects.
+```
 
 ## Error Flow
 
@@ -629,6 +656,10 @@ Shared infrastructure layers
     pure factory from CACHE_URL connection options
 
 Feature layers
+  routes/health/health.service.ts
+    needs Database + RedisClient + QueueFactory
+    provides HealthService
+
   routes/todo/todo.repository.ts
     needs Database
     provides TodoRepository
@@ -692,6 +723,9 @@ InfraLive
   +--> QueueLive
          build QueueFactory
 
+HealthLayer
+  HealthServiceLive needs Database + RedisClient + QueueFactory
+
 TodoLayer
   TodoRepositoryLive needs Database
   TodoCacheLive needs RedisClient
@@ -699,7 +733,7 @@ TodoLayer
   TodoServiceLive needs repository/cache/queue
 
 AppLayer
-  TodoLayer provided by InfraLive
+  HealthLayer and TodoLayer provided by InfraLive
 
 AppRuntime
   ManagedRuntime.make(AppLayer)
@@ -710,6 +744,12 @@ Hono route handlers call AppRuntime.runPromise(...)
 ## Context Dependency Graph
 
 ```txt
+HealthService
+  depends on:
+    Database
+    RedisClient
+    QueueFactory
+
 TodoService
   depends on:
     TodoRepository
@@ -752,6 +792,10 @@ AppConfig
   -> QueueFactory
        -> TodoEventQueue
             -> TodoService
+
+AppConfig
+  -> Database / RedisClient / QueueFactory
+       -> HealthService
 ```
 
 ## Dependency Direction
@@ -971,6 +1015,9 @@ It also avoids needing a route-specific schema object in the shared DatabaseLive
 ## Bruno Testing Workflow
 
 ```txt
+Run migrations:
+  pnpm --filter 010-effect-hono-demo db:migrate
+
 Start server:
   pnpm --filter 010-effect-hono-demo dev
 
@@ -981,7 +1028,8 @@ Select environment:
   Local
 
 Run requests in order:
-  00 Health
+  00 Livez
+  00 Readyz
   01 Create Todo
   02 List Todos
   03 Get Todo
@@ -1047,9 +1095,47 @@ Effect.runPromise
 Layer.scoped
   builds services that need app-lifetime cleanup
 
+Layer.succeed
+  builds simple test implementations for service tags
+
 ManagedRuntime
   owns the app Scope and runs request Effects with app services
 ```
+
+## Test Layer Workflow
+
+The service tests keep the real service and replace only its dependencies:
+
+```txt
+TodoServiceLive
+  needs:
+    TodoRepository
+    TodoCache
+    TodoEventQueue
+
+TestTodoRepository
+  Layer.succeed(TodoRepository, fake implementation)
+
+TestTodoCache
+  Layer.succeed(TodoCache, fake implementation)
+
+TestTodoEventQueue
+  Layer.succeed(TodoEventQueue, fake implementation)
+```
+
+Then the test provides the fake layers:
+
+```txt
+program
+  -> Effect.provide(TodoServiceLive)
+  -> Effect.provide(TestTodoRepository)
+  -> Effect.provide(TestTodoCache)
+  -> Effect.provide(TestTodoEventQueue)
+  -> Effect.runPromise
+```
+
+This is the same dependency injection model as production. Only the Layer
+implementations change.
 
 ## Source Of Truth
 
@@ -1064,7 +1150,7 @@ Redis cache:
   can fail without breaking database reads
 
 BullMQ queue:
-  event side effect after mutations
+  receives best-effort events after todo mutations
   useful for async consumers later
   currently best-effort in this demo
 ```
@@ -1100,15 +1186,40 @@ Tradeoff:
 
 ```txt
 Current demo choice:
-  startup creates the todos table
+  schema is created by Drizzle migrations, not app startup
 
-Why it is okay here:
-  easy learning setup
-  no separate migration command needed
+Why it is production-like:
+  schema changes are operational jobs
+  app boot does not mutate database structure
+  deploys can run migrations before sending traffic to the app
 
-Future production direction:
-  use migrations
-  run migrations separately from app boot
+Tradeoff:
+  local setup has one extra command: db:migrate
+```
+
+```txt
+Current demo choice:
+  liveness and readiness are separate endpoints
+
+Why it is production-like:
+  liveness checks only the process
+  readiness checks Postgres, Redis, and BullMQ
+  load balancers can avoid sending traffic to an unready app
+
+Tradeoff:
+  readiness is slightly slower because it touches external systems
+```
+
+```txt
+Current demo choice:
+  TodoService tests use test Layers
+
+Why it is production-like:
+  the service is tested without a real DB, Redis, or queue
+  production and test use the same Context/Layer model
+
+Tradeoff:
+  fake Layers must still behave like the real service contracts
 ```
 
 ```txt
@@ -1138,7 +1249,13 @@ Examples:
 
 ```txt
 apps/010-effect-hono-demo
+  package.json
   tsconfig.json
+  vitest.config.ts
+  drizzle.config.ts
+
+  drizzle
+    0000_chilly_prodigy.sql
 
   src
     app.ts
@@ -1161,9 +1278,15 @@ apps/010-effect-hono-demo
     routes
       index.ts
 
+      health
+        health.route.ts
+        health.service.ts
+        health.runtime.ts
+
       todo
         todo.route.ts
         todo.service.ts
+        todo.service.test.ts
         todo.repository.ts
         todo.cache.ts
         todo.queue.ts
@@ -1176,7 +1299,8 @@ apps/010-effect-hono-demo
     environments
       Local.bru
     Todo
-      00-health.bru
+      00-livez.bru
+      00-readyz.bru
       01-create-todo.bru
       02-list-todos.bru
       03-get-todo.bru

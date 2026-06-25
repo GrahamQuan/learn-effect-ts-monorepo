@@ -1,9 +1,8 @@
-import { serve, type ServerType } from '@hono/node-server';
+import { type ServerType, serve } from '@hono/node-server';
 import { Effect } from 'effect';
 
 import { createApp } from '@/app';
 import { loadEnv } from '@/lib/env';
-import { prepareRoutes } from '@/routes';
 import { AppRuntime } from '@/runtime';
 
 const app = createApp();
@@ -54,11 +53,6 @@ const registerShutdown = (server: ServerType) => {
 
 const main = Effect.gen(function* () {
   const env = yield* loadEnv;
-
-  yield* Effect.tryPromise({
-    try: () => AppRuntime.runPromise(prepareRoutes),
-    catch: (cause) => cause,
-  });
 
   return yield* Effect.sync(() => {
     const server = serve({ fetch: app.fetch, port: env.port }, (info) => {
