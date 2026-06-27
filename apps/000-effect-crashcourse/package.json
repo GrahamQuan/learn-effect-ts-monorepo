@@ -7,8 +7,7 @@
     "build": "echo 'Add build script here'",
     "test": "echo 'Add test script here'",
     "lint": "echo 'Add lint script here'",
-    "run:00": "tsx src/00-hello-world.ts",
-    "run:01": "tsx src/01-effect-as-value.ts"
+    "run:008": "tsx src/008-fiber-api-demo.ts"
   },
   "dependencies": {
     "@effect/schema": "^0.75.5",
