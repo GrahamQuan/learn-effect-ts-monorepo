@@ -1,0 +1,25 @@
+{
+  "name": "011-stream",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "tsx src/001-basic/index.ts",
+    "build": "echo 'Add build script here'",
+    "test": "echo 'Add test script here'",
+    "lint": "echo 'Add lint script here'",
+    "run:001": "tsx src/001-basic/index.ts",
+    "run:001:01": "tsx src/001-basic/01-create-and-run.ts",
+    "run:001:02": "tsx src/001-basic/02-transform.ts",
+    "run:001:03": "tsx src/001-basic/03-effect-and-errors.ts",
+    "run:002": "tsx src/002-production-demo/index.ts",
+    "run:002:01": "tsx src/002-production-demo/01-paginate-effect.ts",
+    "run:002:02": "tsx src/002-production-demo/02-batch-processing.ts",
+    "run:002:03": "tsx src/002-production-demo/03-concurrency.ts",
+    "run:002:04": "tsx src/002-production-demo/04-queue-worker.ts",
+    "run:002:05": "tsx src/002-production-demo/05-retry-catch.ts"
+  },
+  "dependencies": {
+    "@effect/schema": "^0.75.5",
+    "effect": "^3.21.2"
+  }
+}
