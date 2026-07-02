@@ -578,6 +578,15 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
 
+  apps/011-stream:
+    dependencies:
+      '@effect/schema':
+        specifier: ^0.75.5
+        version: 0.75.5(effect@3.21.2)
+      effect:
+        specifier: ^3.21.2
+        version: 3.21.2
+
   apps/012-output-parser-practice-two-cases:
     dependencies:
       '@hono/node-server':
@@ -613,6 +622,27 @@ importers:
       zod:
         specifier: ^4.4.3
         version: 4.4.3
+
+  apps/012-url-import-demo:
+    dependencies:
+      '@hono/node-server':
+        specifier: ^2.0.1
+        version: 2.0.1(hono@4.12.25)
+      bullmq:
+        specifier: ^5.78.0
+        version: 5.78.0
+      dotenv:
+        specifier: ^17.4.2
+        version: 17.4.2
+      dotenv-expand:
+        specifier: ^13.0.0
+        version: 13.0.0
+      effect:
+        specifier: ^3.21.2
+        version: 3.21.2
+      hono:
+        specifier: ^4.12.25
+        version: 4.12.25
 
   apps/013-prompt-template:
     dependencies:
