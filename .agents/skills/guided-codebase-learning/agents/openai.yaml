@@ -1,0 +1,4 @@
+interface:
+  display_name: "Guided Codebase Learning"
+  short_description: "Plan first, then learn through README and executable tests"
+  default_prompt: "Use $guided-codebase-learning with this repository path; begin with read-only discovery and an exact file-change preview, then wait for my confirmation before editing."
